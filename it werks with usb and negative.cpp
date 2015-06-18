@@ -2,7 +2,8 @@
 #include "MSCFileSystem.h"
 #define FSNAME "msc"
 #define PC_DEBUG true
-
+#define MAX_RPM_DISPLAY 9000
+#define COOLANT_WARNING_THRESHOLD 100
 
 #include "cmath"
 #include <stdio.h>
@@ -42,24 +43,21 @@ car_datastruct car_data;
      
                       
 void rx_data(){
-    //__disable_irq();    // Disable Interrupts
     count++;
-    
     str = "";
     byte_count=0;
     if(PC_DEBUG){ pc.printf("Reading data\n\r");}
+    
     while (1){
 
         if (msquirt.readable())
         {
-            //pc.printf("got byte - %d\r\n", byte_count);
             str += msquirt.getc();
             byte_count++;
         }
         
         if (byte_count >= 209)
         {
-            //pc.printf("we got data\n\r");
             break;
         }
     }
@@ -69,14 +67,16 @@ void rx_data(){
         uint8_t b[2];
         int16_t i;
     };
+    
+    
     b[1] = str[22]; b[0] = str[23];
     car_data.coolant = (i-320) * 0.05555;
-    if(car_data.coolant >= 90){ LED_CLT = 1;} else {LED_CLT = 0;}
+    if(car_data.coolant >= COOLANT_WARNING_THRESHOLD){ LED_CLT = 1;} else {LED_CLT = 0;}   //Coolant warning light code
     if(PC_DEBUG){ pc.printf("CLT = %f \r\n",car_data.coolant);}
     
     b[1] = str[6]; b[0] = str[7];
     car_data.RPM = i;
-    //LED_driver = i/8000.0;
+    LED_driver = i/(float)MAX_RPM_DISPLAY;
     if(PC_DEBUG){ pc.printf("rpm %f \n\r",car_data.RPM);}
     
     b[1] = str[28];b[0] = str[29];
@@ -135,69 +135,54 @@ void rx_data(){
     }
     sprintf(logged_str, "%f  %.3f  %.3f  %.3f  %.3f  %.3f  %.3f \r\n", t.read(), car_data.RPM, car_data.mat, car_data.map, car_data.coolant, car_data.throttle, car_data.battery );
 
-    //fprintf(fp, logged_str);
-    str = "";
-    byte_count = 0;
-    //pc.printf("set to zer mofofoker");
     fetch = true;
-    // __enable_irq();     // Enable Interrupts
-    //pc.printf("fetch set true");
-    //wait(0.2);
 }
 
 void flush()
+//Removed the character to write to, idk if it will still work, it should, but this is the mbed
 {
-    char b;
     while(msquirt.readable())
     {
-        b = msquirt.getc();
+        msquirt.getc();
     }
 }
 
-void log_data()
-{
-    //fprintf(fp,"%.1f\370C\t%.1f\370C\n\r",temp(Tin), temp(Tout));
-}
 
-
-int main() {     
+int main() {
+    //This baud rate does work and has been tested through dodgy dodgy extention cables, but may be flaky so change if neccessary
     msquirt.baud(115200);
     pc.baud(115200);
     LED_driver = 0.0;
     
     FILE *fp = fopen( "/msc/usb5.tsv", "w");                    //open USB file
-    
-    pc.printf("\r\nData Logging Started\r\n\r\n");              //print instructions to terminal     
-    fprintf(fp,"TIME     RPM  MAT  MAP  CLT  THROTTLE  BATTERY \r\n\r\n");   //log rpm and time to USB
-
-    fclose (fp); 
+    //This may not work, but hopefully will allow the logger to continue processing data even if the usb has died somehow
+    if(fp != NULL){
+        pc.printf("\r\nData Logging Started\r\n\r\n");              //print instructions to terminal     
+        fprintf(fp,"TIME     RPM  MAT  MAP  CLT  THROTTLE  BATTERY \r\n\r\n");   //log rpm and time to USB
+        fclose (fp);
+    } else { pc.printf("Write to USB failed\n\r"); }
     
     t.start();       
 
     pc.printf("main\r\n");
-    //msquirt.attach(&rx_data, Serial::RxIrq);
     fetch = true;
     flush();
     while(1){
 
-        //wait_us(100);
+
         if(fetch)
         {   
-                if(LED_driver.read() >= 1.0){ LED_driver = 0; }
-                LED_driver = LED_driver.read() + 0.1;
-                wait(0.05);
-                  
-            FILE *fp = fopen( "/msc/usb5.tsv", "a");                    //open USB file
             
             flush();
             msquirt.putc('A');
-            //wait(0.1);
             rx_data();
-            fprintf(fp, logged_str);
-            fclose(fp);
-                                                     //close USB file
-
             
+            //Write log to file
+            FILE *fp = fopen( "/msc/usb5.tsv", "a"); //open USB file
+            if(fp != NULL){
+                fprintf(fp, logged_str);
+                fclose(fp);                         //close USB file
+            } else { pc.printf("Write to USB failed\n\r"); }
         }
     }        
             
