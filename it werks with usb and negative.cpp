@@ -8,8 +8,6 @@
 #include "cmath"
 #include <stdio.h>
 #include <string>
-
-MSCFileSystem msc("msc");                                       //USB file
     
 
 Serial pc(USBTX, USBRX); // tx, rx
@@ -154,7 +152,8 @@ int main() {
     pc.baud(115200);
     LED_driver = 0.0;
     
-    FILE *fp = fopen( "/msc/usb5.tsv", "w");                    //open USB file
+    MSCFileSystem msc("msc");                                       //USB file
+    FILE *fp = fopen( "/msc/usb5.tsv", "w");                     //open USB file
     //This may not work, but hopefully will allow the logger to continue processing data even if the usb has died somehow
     if(fp != NULL){
         pc.printf("\r\nData Logging Started\r\n\r\n");              //print instructions to terminal     
@@ -178,6 +177,7 @@ int main() {
             rx_data();
             
             //Write log to file
+            MSCFileSystem msc("msc");                                       //USB file
             FILE *fp = fopen( "/msc/usb5.tsv", "a"); //open USB file
             if(fp != NULL){
                 fprintf(fp, logged_str);
