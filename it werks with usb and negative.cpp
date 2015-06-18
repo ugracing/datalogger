@@ -1,6 +1,8 @@
 #include "mbed.h"
 #include "MSCFileSystem.h"
 #define FSNAME "msc"
+#define PC_DEBUG true
+
 
 #include "cmath"
 #include <stdio.h>
@@ -45,7 +47,7 @@ void rx_data(){
     
     str = "";
     byte_count=0;
-    pc.printf("Reading data\n\r");
+    if(PC_DEBUG){ pc.printf("Reading data\n\r");}
     while (1){
 
         if (msquirt.readable())
@@ -69,36 +71,38 @@ void rx_data(){
     };
     b[1] = str[22]; b[0] = str[23];
     car_data.coolant = (i-320) * 0.05555;
-    pc.printf("CLT = %f \r\n",car_data.coolant);
+    if(car_data.coolant >= 90){ LED_CLT = 1;} else {LED_CLT = 0;}
+    if(PC_DEBUG){ pc.printf("CLT = %f \r\n",car_data.coolant);}
     
     b[1] = str[6]; b[0] = str[7];
     car_data.RPM = i;
-    pc.printf("rpm %f \n\r",car_data.RPM);
+    //LED_driver = i/8000.0;
+    if(PC_DEBUG){ pc.printf("rpm %f \n\r",car_data.RPM);}
     
     b[1] = str[28];b[0] = str[29];
     car_data.air_fuel_1 = i/10.0;
-    pc.printf("Air_fuel_1 %f \n\r",car_data.air_fuel_1);
+    if(PC_DEBUG){ pc.printf("Air_fuel_1 %f \n\r",car_data.air_fuel_1);}
     
     b[1] = str[18];b[0] = str[19];
     car_data.map = i*0.1;
-    pc.printf("MAP %f \n\r",car_data.map);
+    if(PC_DEBUG){ pc.printf("MAP %f \n\r",car_data.map);}
     
     b[1] = str[20];b[0] = str[21];
     car_data.mat = (i-320)*0.05555;
-    pc.printf("MAT %f \r\n", car_data.mat);
+    if(PC_DEBUG){ pc.printf("MAT %f \r\n", car_data.mat);}
 
     
     b[1] = str[24];b[0] = str[25];
     car_data.throttle = i/10.0;
-    pc.printf("Throttle %f \r\n", car_data.throttle);
+    if(PC_DEBUG){ pc.printf("Throttle %f \r\n", car_data.throttle);}
 
     b[1] = str[8];b[0] = str[9];
     car_data.advance = i*0.1;
-    pc.printf("Advance %f \r\n", car_data.advance);
+    if(PC_DEBUG){ pc.printf("Advance %f \r\n", car_data.advance);}
     
     b[1] = str[26];b[0] = str[27];
     car_data.battery = i*0.1;
-    pc.printf("Battery %f \r\n", car_data.battery);
+    if(PC_DEBUG){ pc.printf("Battery %f \r\n", car_data.battery);}
 
     /*b[0] = str[108];
     car_data.throttle = i*0.1;
@@ -110,14 +114,14 @@ void rx_data(){
     car_data.air_fuel_2 = i*0.1;
     int offset;
     
-    pc.printf("injectors ");
+    if(PC_DEBUG){ pc.printf("injectors ");}
     b[0] = str[10];
     for(offset = 0; offset<7; offset++){
         car_data.injectors_status[offset] = ((b[0] >> offset) & 0x01);
-        pc.printf("%d", car_data.injectors_status[offset]);
+        if(PC_DEBUG){ pc.printf("%d", car_data.injectors_status[offset]);}
     }
     
-    pc.printf("engine ");
+    if(PC_DEBUG){ pc.printf("engine ");}
      b[0] = str[11];
     for(offset = 0; offset<7; offset++){
         car_data.engine_status[offset] = ((b[0] >> offset) & 0x01);
@@ -125,8 +129,10 @@ void rx_data(){
     }
     
     
-    pc.printf("got %d bytes\r\n \r\n", byte_count);
-    pc.printf("TIMEEEE  %f \r\n", t.read());
+    if(PC_DEBUG){ 
+        pc.printf("got %d bytes\r\n \r\n", byte_count);
+        pc.printf("TIMEEEE  %f \r\n", t.read());
+    }
     sprintf(logged_str, "%f  %.3f  %.3f  %.3f  %.3f  %.3f  %.3f \r\n", t.read(), car_data.RPM, car_data.mat, car_data.map, car_data.coolant, car_data.throttle, car_data.battery );
 
     //fprintf(fp, logged_str);
@@ -155,8 +161,10 @@ void log_data()
 
 
 int main() {     
-             
-                      
+    msquirt.baud(115200);
+    pc.baud(115200);
+    LED_driver = 0.0;
+    
     FILE *fp = fopen( "/msc/usb5.tsv", "w");                    //open USB file
     
     pc.printf("\r\nData Logging Started\r\n\r\n");              //print instructions to terminal     
@@ -165,8 +173,7 @@ int main() {
     fclose (fp); 
     
     t.start();       
-    msquirt.baud(38400);
-    pc.baud(57600);
+
     pc.printf("main\r\n");
     //msquirt.attach(&rx_data, Serial::RxIrq);
     fetch = true;
@@ -176,11 +183,15 @@ int main() {
         //wait_us(100);
         if(fetch)
         {   
+                if(LED_driver.read() >= 1.0){ LED_driver = 0; }
+                LED_driver = LED_driver.read() + 0.1;
+                wait(0.05);
+                  
             FILE *fp = fopen( "/msc/usb5.tsv", "a");                    //open USB file
             
             flush();
             msquirt.putc('A');
-            wait(0.1);
+            //wait(0.1);
             rx_data();
             fprintf(fp, logged_str);
             fclose(fp);
