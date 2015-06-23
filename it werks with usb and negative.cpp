@@ -8,6 +8,8 @@
 #include "cmath"
 #include <stdio.h>
 #include <string>
+
+MSCFileSystem msc("msc");                                       //USB file
     
 
 Serial pc(USBTX, USBRX); // tx, rx
@@ -19,7 +21,8 @@ DigitalOut LED_CLT(p21);
 Timer t;
 int byte_count;
 string str;
-char logged_str[300];
+char loggerBuffer[16384]; //Massive ass logger buffer
+unsigned int loggerBufferEnd = 0;
 bool fetch;
 int count;
 
@@ -53,6 +56,7 @@ void rx_data(){
             str += msquirt.getc();
             byte_count++;
         }
+
         
         if (byte_count >= 209)
         {
@@ -74,7 +78,7 @@ void rx_data(){
     
     b[1] = str[6]; b[0] = str[7];
     car_data.RPM = i;
-    LED_driver = i/(float)MAX_RPM_DISPLAY;
+    //LED_driver = i/(float)MAX_RPM_DISPLAY;
     if(PC_DEBUG){ pc.printf("rpm %f \n\r",car_data.RPM);}
     
     b[1] = str[28];b[0] = str[29];
@@ -131,8 +135,9 @@ void rx_data(){
         pc.printf("got %d bytes\r\n \r\n", byte_count);
         pc.printf("TIMEEEE  %f \r\n", t.read());
     }
-    sprintf(logged_str, "%f  %.3f  %.3f  %.3f  %.3f  %.3f  %.3f \r\n", t.read(), car_data.RPM, car_data.mat, car_data.map, car_data.coolant, car_data.throttle, car_data.battery );
-
+    
+    loggerBufferEnd += sprintf(loggerBuffer + loggerBufferEnd, "%d %f  %.3f  %.3f  %.3f  %.3f  %.3f  %.3f \r\n", count, t.read(), car_data.RPM, car_data.mat, car_data.map, car_data.coolant, car_data.throttle, car_data.battery );
+    loggerBuffer[loggerBufferEnd] = '\0';
     fetch = true;
 }
 
@@ -150,10 +155,11 @@ int main() {
     //This baud rate does work and has been tested through dodgy dodgy extention cables, but may be flaky so change if neccessary
     msquirt.baud(115200);
     pc.baud(115200);
-    LED_driver = 0.0;
+    LED_driver = 1.0;
     
-    MSCFileSystem msc("msc");                                       //USB file
-    FILE *fp = fopen( "/msc/usb5.tsv", "w");                     //open USB file
+    //File initialisation
+    
+    FILE *fp = fopen( "/msc/usb5.tsv", "w");                    //open USB file
     //This may not work, but hopefully will allow the logger to continue processing data even if the usb has died somehow
     if(fp != NULL){
         pc.printf("\r\nData Logging Started\r\n\r\n");              //print instructions to terminal     
@@ -165,9 +171,9 @@ int main() {
 
     pc.printf("main\r\n");
     fetch = true;
-    flush();
     while(1){
-
+        if(LED_driver.read() >= 1.0){ LED_driver = 0.0; }
+        LED_driver = LED_driver.read() + 0.01;
 
         if(fetch)
         {   
@@ -177,12 +183,12 @@ int main() {
             rx_data();
             
             //Write log to file
-            MSCFileSystem msc("msc");                                       //USB file
             FILE *fp = fopen( "/msc/usb5.tsv", "a"); //open USB file
             if(fp != NULL){
-                fprintf(fp, logged_str);
+                fprintf(fp, loggerBuffer);
                 fclose(fp);                         //close USB file
             } else { pc.printf("Write to USB failed\n\r"); }
+            loggerBufferEnd = 0;
         }
     }        
             
