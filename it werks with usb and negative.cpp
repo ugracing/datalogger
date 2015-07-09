@@ -2,8 +2,8 @@
 #include "MSCFileSystem.h"
 #define FSNAME "msc"
 #define PC_DEBUG 0
-#define MAX_RPM_DISPLAY 9000
-#define COOLANT_WARNING_THRESHOLD 100
+#define MAX_RPM_DISPLAY 12000
+#define COOLANT_WARNING_THRESHOLD 95
 
 #include "cmath"
 #include <stdio.h>
@@ -17,6 +17,7 @@ Serial msquirt(p9, p10); // tx, rx
 DigitalOut myled(LED1);
 AnalogOut LED_driver(p18);
 DigitalOut LED_CLT(p21);
+DigitalOut debugLED (LED1);
 
 Timer t;
 Timer serialTimeout;
@@ -25,9 +26,12 @@ int serialBufferEnd = 0;
 char loggerBuffer[300]; //Massive ass logger buffer
 bool fetch;
 int count;
+int flashCount;
+
 
 struct car_datastruct{
-    float RPM;
+    unsigned int seconds;
+    unsigned int rpm;
     float map;
     float mat;
     float coolant;
@@ -40,8 +44,7 @@ struct car_datastruct{
     bool injectors_status[7];
 };
 
-car_datastruct car_data;
-     
+car_datastruct car_data; 
                       
 void megasquirtRequest(){
     
@@ -62,18 +65,20 @@ void megasquirtRequest(){
         }
 
         if (serialBufferEnd >= 209){ break; }
+        
         if (serialTimeout.read_ms() > 100){
             msquirt.putc('A');
             serialTimeout.reset();
+            if(PC_DEBUG){ pc.printf("Serial connection lost\n\r");}
         }
     }
 
-    union
-    {
-        uint8_t b[2];
-        int16_t i;
-    };
+    union { uint8_t b[2]; int16_t i; uint16_t ui; };
     
+    
+    b[1] = serialBuffer[0]; b[0] = serialBuffer[1];
+    car_data.seconds = ui;
+    if(PC_DEBUG){ pc.printf("Engine seconds = %u \n\r", car_data.seconds); }
     
     b[1] = serialBuffer[22]; b[0] = serialBuffer[23];
     car_data.coolant = (i-320) * 0.05555;
@@ -81,9 +86,11 @@ void megasquirtRequest(){
     if(PC_DEBUG){ pc.printf("CLT = %f \r\n",car_data.coolant);}
     
     b[1] = serialBuffer[6]; b[0] = serialBuffer[7];
-    car_data.RPM = i;
-    //LED_driver.write_u16(65535/MAX_RPM_DISPLAY);
-    if(PC_DEBUG){ pc.printf("rpm %f \n\r",car_data.RPM);}
+    car_data.rpm = ui;
+    debugLED = 0;
+    LED_driver.write_u16((65535 * car_data.rpm) / MAX_RPM_DISPLAY);
+    debugLED = 1;
+    if(PC_DEBUG){ pc.printf("rpm %u \n\r",car_data.rpm);}
     
     b[1] = serialBuffer[28];b[0] = serialBuffer[29];
     car_data.air_fuel_1 = i/10.0;
@@ -140,7 +147,7 @@ void megasquirtRequest(){
         pc.printf("TIMEEEE  %f \r\n", t.read());
     }
     
-    sprintf(loggerBuffer, "%.2f\t%.0f\t%.3f\t%.1f\t%.1f\t%.1f\t%.1f \r\n\0", t.read(), car_data.RPM, car_data.mat, car_data.map, car_data.coolant, car_data.throttle, car_data.battery );
+    sprintf(loggerBuffer, "%.2f\t%u\t%u\t%.3f\t%.1f\t%.1f\t%.1f\t%.1f \r\n\0", t.read(), car_data.seconds, car_data.rpm, car_data.mat, car_data.map, car_data.coolant, car_data.throttle, car_data.battery );
 
     fetch = true;
 }
@@ -161,7 +168,7 @@ int main() {
     //This baud rate does work and has been tested through dodgy dodgy extention cables, but may be flaky so change if neccessary
     msquirt.baud(115200);
     pc.baud(115200);
-    LED_driver.write_u16(65535);
+    LED_driver = 1.0;
     serialTimeout.start();
     
     //File initialisation
@@ -169,7 +176,7 @@ int main() {
     FILE *fp = fopen( "/msc/usb5.tsv", "w");                    //open USB file
     if(fp != NULL){
         pc.printf("\r\nData Logging Started\r\n\r\n");              //print instructions to terminal     
-        fprintf(fp,"TIME\tRPM\tMAT\tMAP\tCLT\tTHROTTLE\tBATTERY\r\n\r\n");   //Print the field names
+        fprintf(fp,"TIME\tENGINE TIME\tRPM\tMAT\tMAP\tCLT\tTHROTTLE\tBATTERY\r\n\r\n");   //Print the field names
         fclose (fp);
     } else { pc.printf("Write to USB failed\n\r"); }
     
@@ -178,8 +185,9 @@ int main() {
     pc.printf("main\r\n");
     fetch = true;
     while(1){
-        if(LED_driver.read() >= 1.0){ LED_driver = 0.0; }
-        LED_driver = LED_driver.read() + 0.1;
+        //if(LED_driver.read() >= 1.0){ LED_driver = 0.0; }
+        //LED_driver = LED_driver + 0.1;
+
 
         if(fetch){   
             
